@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Zıplayan Top - Beka STUDIO</title>
+    <style>
+        /* Genel Ayarlar */
+        body { margin: 0; overflow: hidden; background: #050505; font-family: 'Segoe UI', sans-serif; }
+        canvas { display: block; touch-action: none; position: absolute; top: 0; left: 0; z-index: 1; }
+        
+        /* Oyun İçi UI (Başlangıçta gizli) */
+        #gameUI {
+            display: none; /* Menüdeyken gizle */
+            position: absolute; top: 20px; left: 20px;
+            color: #fff; pointer-events: none; z-index: 10;
+        }
+        .score-text { font-size: 24px; color: #00ffcc; text-shadow: 0 0 10px #00ffcc; margin: 0; }
+        .high-score { font-size: 16px; color: #ffcc00; opacity: 0.8; margin-top: 5px; }
+        #inGameBrand {
+             display: none; /* Menüdeyken gizle */
+            position: absolute; bottom: 15px; right: 15px;
+            color: rgba(255, 255, 255, 0.3); font-size: 14px; font-weight: bold;
+            letter-spacing: 2px; pointer-events: none; z-index: 10;
+        }
+
+        /* --- ANA MENÜ STİLLERİ --- */
+        #mainMenu {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: linear-gradient(to bottom, #050505, #1a1a2e);
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            z-index: 20; /* Canvas'ın üzerinde dursun */
+            color: #fff;
+        }
+        
+        #mainMenu h1 {
+            font-size: 48px; color: #00ffcc; text-shadow: 0 0 20px #00ffcc, 0 0 40px #00ffcc;
+            margin-bottom: 40px; text-align: center;
+        }
+
+        #startButton {
+            padding: 15px 40px; font-size: 24px; font-weight: bold; color: #fff;
+            background: transparent; border: 3px solid #ff0055; border-radius: 50px;
+            box-shadow: 0 0 15px #ff0055; cursor: pointer; transition: all 0.3s;
+        }
+        #startButton:active { transform: scale(0.95); background: rgba(255, 0, 85, 0.2); }
+
+        /* Beka Studio & Kayya Kaya Alanı */
+        .credits-container { margin-top: 50px; text-align: center; }
+        .studio-trigger {
+            font-size: 20px; font-weight: bold; letter-spacing: 2px; color: #fff;
+            cursor: pointer; transition: color 0.3s;
+        }
+        .studio-trigger:hover { color: #00ffcc; text-shadow: 0 0 10px #00ffcc; }
+
+        .kayya-text {
+            display: block; margin-top: 10px; font-size: 28px; font-weight: 900;
+            color: #ffcc00; text-shadow: 0 0 15px #ffcc00, 0 0 30px red;
+            opacity: 0; transform: translateY(20px); transition: all 0.5s ease-out;
+        }
+        /* JavaScript ile eklenecek sınıf */
+        .kaya-text.show-kaya { opacity: 1; transform: translateY(0); }
+
+        /* Powered By Gemini */
+        .powered-by {
+            position: absolute; bottom: 20px; font-size: 12px; color: rgba(255,255,255,0.5);
+            letter-spacing: 1px;
+        }
+    </style>
+</head>
+<body>
+    <div id="mainMenu">
+        <h1>Zıplayan Top</h1>
+        <button id="startButton">OYUNA BAŞLA</button>
+        
+        <div class="credits-container">
+            <span class="studio-trigger" id="bekaTrigger">BEKA STUDIO</span>
+            <span class="kaya-text" id="kayaTarget">KAYA KAYA</span>
+        </div>
+
+        <div class="powered-by">POWERED BY GEMINI</div>
+    </div>
+
+    <div id="gameUI">
+        <div class="score-text" id="scoreDisplay">Skor: 0</div>
+        <div class="high-score" id="highScoreDisplay">En Yüksek: 0</div>
+    </div>
+    <div id="inGameBrand">Beka STUDIO</div>
+    <canvas id="gameCanvas"></canvas>
+
+    <script>
+        // --- MENÜ ETKİLEŞİMLERİ ---
+        const mainMenu = document.getElementById('mainMenu');
+        const startButton = document.getElementById('startButton');
+        const gameUI = document.getElementById('gameUI');
+        const inGameBrand = document.getElementById('inGameBrand');
+        const bekaTrigger = document.getElementById('bekaTrigger');
+        const kayyaTarget = document.getElementById('kayyaTarget');
+
+        // BEKA STUDIO'ya tıklayınca KAYA KAYA çıksın
+        bekaTrigger.addEventListener('click', () => {
+            kayyaTarget.classList.add('show-kayya');
+            // 2 saniye sonra geri kaybolsun (isteğe bağlı)
+            setTimeout(() => {
+                kayyaTarget.classList.remove('show-kayya');
+            }, 2500);
+        });
+
+        // Oyunu Başlat Butonu
+        startButton.addEventListener('click', () => {
+            mainMenu.style.display = 'none'; // Menüyü gizle
+            gameUI.style.display = 'block'; // Oyun UI göster
+            inGameBrand.style.display = 'block'; // Oyun içi marka göster
+            gameState = 'playing'; // Oyun durumunu başlat
+        });
+
+
+        // --- OYUN MOTORU ---
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreDisplay = document.getElementById('scoreDisplay');
+        const highScoreDisplay = document.getElementById('highScoreDisplay');
+
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        // Oyun Durumu (menu veya playing)
+        let gameState = 'menu'; 
+        let score = 0;
+        let highScore = localStorage.getItem('ziplayanTopHighScore') || 0;
+        let gameActive = true;
+        highScoreDisplay.innerText = `En Yüksek: ${highScore}`;
+
+        const player = {
+            x: canvas.width * 0.2,
+            y: canvas.height / 2,
+            radius: 18,
+            velocity: 0,
+            gravity: 0.5,
+            jump: -9,
+            color: '#00ffcc'
+        };
+
+        const pipes = [];
+        const pipeWidth = 70;
+        const pipeGap = 220;
+        const distanceBetweenPipes = 450;
+
+        function createPipe() {
+            const minHeight = 100;
+            const maxHeight = canvas.height - pipeGap - minHeight;
+            const height = Math.floor(Math.random() * (maxHeight - minHeight + 1)) + minHeight;
+            pipes.push({
+                x: canvas.width,
+                top: height,
+                bottom: canvas.height - height - pipeGap,
+                passed: false
+            });
+        }
+
+        function update() {
+            // Eğer oyun durumunda değilsek güncelleme yapma
+            if (gameState !== 'playing' || !gameActive) return;
+
+            player.velocity += player.gravity;
+            player.y += player.velocity;
+
+            if (player.y + player.radius > canvas.height) player.y = canvas.height - player.radius;
+            if (player.y - player.radius < 0) {
+                player.y = player.radius;
+                player.velocity = 0;
+            }
+
+            if (pipes.length === 0 || pipes[pipes.length - 1].x < canvas.width - distanceBetweenPipes) {
+                createPipe();
+            }
+
+            pipes.forEach((pipe, index) => {
+                pipe.x -= 3.5;
+
+                if (
+                    player.x + player.radius > pipe.x &&
+                    player.x - player.radius < pipe.x + pipeWidth &&
+                    (player.y - player.radius < pipe.top || player.y + player.radius > canvas.height - pipe.bottom)
+                ) {
+                    gameOver();
+                }
+
+                if (!pipe.passed && pipe.x + pipeWidth < player.x) {
+                    score++;
+                    pipe.passed = true;
+                    scoreDisplay.innerText = `Skor: ${score}`;
+                    if (score > highScore) {
+                        highScore = score;
+                        highScoreDisplay.innerText = `En Yüksek: ${highScore}`;
+                    }
+                }
+
+                if (pipe.x + pipeWidth < 0) pipes.splice(index, 1);
+            });
+        }
+
+        function draw() {
+            // Menüdeyken sadece arka planı çiz, oyunu çizme
+            if (gameState !== 'playing') {
+                let grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+                grad.addColorStop(0, '#050505');
+                grad.addColorStop(1, '#1a1a2e');
+                ctx.fillStyle = grad;
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                return;
+            }
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Arkaplan
+            let grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            grad.addColorStop(0, '#050505');
+            grad.addColorStop(1, '#1a1a2e');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Oyuncu
+            ctx.shadowBlur = 20;
+            ctx.shadowColor = player.color;
+            ctx.fillStyle = player.color;
+            ctx.beginPath();
+            ctx.arc(player.x, player.y, player.radius, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Engeller
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = '#ff0055';
+            ctx.fillStyle = '#ff0055';
+            pipes.forEach(pipe => {
+                ctx.fillRect(pipe.x, 0, pipeWidth, pipe.top);
+                ctx.fillRect(pipe.x, canvas.height - pipe.bottom, pipeWidth, pipe.bottom);
+            });
+            ctx.shadowBlur = 0;
+        }
+
+        function loop() {
+            update();
+            draw();
+            requestAnimationFrame(loop);
+        }
+
+        function gameOver() {
+            gameActive = false;
+            localStorage.setItem('ziplayanTopHighScore', highScore);
+            
+            setTimeout(() => {
+                alert(`OYUN BİTTİ!\nSkorun: ${score}\nEn Yüksek: ${highScore}\n\nBeka STUDIO gururla sunar.`);
+                location.reload(); // Sayfayı yenileyerek menüye dön
+            }, 100);
+        }
+
+        // Kontroller (Sadece oyun başladığında aktif)
+        const handleJump = (e) => {
+            if (gameState !== 'playing') return; 
+            if (e.cancelable) e.preventDefault();
+            player.velocity = player.jump;
+        };
+
+        window.addEventListener('touchstart', handleJump, { passive: false });
+        // Mousedown'ı canvas'a bağladık ki menüdeki tıklamalar zıplatmasın
+        canvas.addEventListener('mousedown', handleJump);
+
+        loop();
+    </script>
+</body>
+</html>
